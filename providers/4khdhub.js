@@ -45,19 +45,7 @@ var DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/
 var domainCache = { url: BASE_URL, ts: 0 };
 function fetchLatestDomain() {
   return __async(this, null, function* () {
-    const now = Date.now();
-    if (now - domainCache.ts < 36e5)
-      return domainCache.url;
-    try {
-      const response = yield fetch(DOMAINS_URL);
-      const data = yield response.json();
-      if (data && data["4khdhub"]) {
-        domainCache.url = data["4khdhub"];
-        domainCache.ts = now;
-      }
-    } catch (e) {
-    }
-    return domainCache.url;
+    return BASE_URL;
   });
 }
 function fetchText(_0) {
@@ -185,32 +173,51 @@ var cheerio = require("cheerio-without-node-native");
 function fetchPageUrl(name, year, isSeries) {
     return __async(this, null, function* () {
         const domain = yield fetchLatestDomain();
-        // Buscar usando diferentes patrones de URL
-        const searchUrls = [
-            `${domain}/?s=${encodeURIComponent(name + " " + year)}`,
-            `${domain}/search/${encodeURIComponent(name)}`,
-            `${domain}/category/${encodeURIComponent(isSeries ? "series" : "movie")}`,
-        ];
-        
-        for (const searchUrl of searchUrls) {
-            console.log(`[4KHDHub] Trying: ${searchUrl}`);
-            const html = yield fetchText(searchUrl);
-            if (!html) continue;
-            
-            const $ = cheerio.load(html);
-            // Buscar cualquier enlace que contenga el título
-            const links = $("a[href]").filter((_, el) => {
-                const text = $(el).text().toLowerCase();
-                return text.includes(name.toLowerCase()) && 
-                       text.includes(String(year));
-            });
-            
-            if (links.length > 0) {
-                const href = links.first().attr("href");
-                return href.startsWith("http") ? href : domain + href;
-            }
+        const searchUrl = `${domain}/?s=${encodeURIComponent(name + " " + year)}`;
+        console.log(`[4KHDHub] Search Request URL: ${searchUrl}`);
+        const html = yield fetchText(searchUrl);
+        if (!html) {
+            console.log("[4KHDHub] Search failed: No HTML response");
+            return null;
         }
-        return null;
+        const $ = cheerio.load(html);
+        const targetType = isSeries ? "Series" : "Movies";
+        console.log(`[4KHDHub] Parsing search results for type: ${targetType}`);
+        
+        // Buscar todos los .movie-card
+        const matchingCards = $(".movie-card").filter((_, el) => {
+            // Extraer el año de la URL o del texto
+            const link = $(el).find("a").attr("href") || "";
+            const yearMatch = link.includes(String(year)) || 
+                             $(el).text().includes(String(year));
+            
+            // Determinar si es serie o película por la URL
+            const isSeriesMatch = link.includes("/category/series/") || 
+                                 link.includes("tv") ||
+                                 $(el).text().toLowerCase().includes("series");
+            const isMovieMatch = link.includes("/category/movies/") || 
+                                link.includes("movie") ||
+                                $(el).text().toLowerCase().includes("movie");
+            
+            // Si buscamos series y es una serie, o si buscamos películas y es una película
+            const typeMatch = isSeries ? isSeriesMatch : isMovieMatch;
+            
+            return yearMatch && typeMatch;
+        }).map((_, el) => {
+            // Intentar obtener el enlace
+            let href = $(el).find("a").attr("href");
+            if (!href) {
+                // Si no hay enlace directo, buscar en el elemento
+                href = $(el).attr("href") || $(el).find("a").first().attr("href");
+            }
+            if (href && !href.startsWith("http")) {
+                href = domain + (href.startsWith("/") ? "" : "/") + href;
+            }
+            return href;
+        }).get();
+        
+        console.log(`[4KHDHub] Found ${matchingCards.length} matching cards`);
+        return matchingCards.length > 0 ? matchingCards[0] : null;
     });
 }
 var cheerio2 = require("cheerio-without-node-native");
