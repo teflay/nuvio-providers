@@ -183,51 +183,35 @@ function formatBytes(val) {
 }
 var cheerio = require("cheerio-without-node-native");
 function fetchPageUrl(name, year, isSeries) {
-  return __async(this, null, function* () {
-    const domain = yield fetchLatestDomain();
-    const searchUrl = `${domain}/?s=${encodeURIComponent(name + " " + year)}`;
-    console.log(`[4KHDHub] Search Request URL: ${searchUrl}`);
-    const html = yield fetchText(searchUrl);
-    if (!html) {
-      console.log("[4KHDHub] Search failed: No HTML response");
-      return null;
-    }
-    const $ = cheerio.load(html);
-    const targetType = isSeries ? "Series" : "Movies";
-    console.log(`[4KHDHub] Parsing search results for type: ${targetType}`);
-    const matchingCards = $(".movie-card").filter((_, el) => {
-      const hasFormat = $(el).find(`.movie-card-format:contains("${targetType}")`).length > 0;
-      if (!hasFormat) {
-      }
-      return hasFormat;
-    }).filter((_, el) => {
-      const metaText = $(el).find(".movie-card-meta").text();
-      const movieCardYear = parseInt(metaText);
-      const yearMatch = !isNaN(movieCardYear) && Math.abs(movieCardYear - year) <= 1;
-      if (!yearMatch) {
-        console.log(`[4KHDHub] Skip: Year mismatch (${movieCardYear} vs ${year}) - ${$(el).find(".movie-card-title").text().trim()}`);
-      }
-      return yearMatch;
-    }).filter((_, el) => {
-      const movieCardTitle = $(el).find(".movie-card-title").text().replace(/\[.*?]/g, "").trim();
-      const distance = levenshteinDistance(movieCardTitle.toLowerCase(), name.toLowerCase());
-      const match = distance < 5;
-      console.log(`[4KHDHub] Checking: "${movieCardTitle}" (Dist: ${distance}) vs "${name}"`);
-      return match;
-    }).map((_, el) => {
-      let href = $(el).attr("href");
-      if (href && !href.startsWith("http")) {
-        href = domain + (href.startsWith("/") ? "" : "/") + href;
-      }
-      return href;
-    }).get();
-    if (matchingCards.length === 0) {
-      console.log("[4KHDHub] No matching cards found after filtering");
-    } else {
-      console.log(`[4KHDHub] Found ${matchingCards.length} matching cards`);
-    }
-    return matchingCards.length > 0 ? matchingCards[0] : null;
-  });
+    return __async(this, null, function* () {
+        const domain = yield fetchLatestDomain();
+        // Buscar usando diferentes patrones de URL
+        const searchUrls = [
+            `${domain}/?s=${encodeURIComponent(name + " " + year)}`,
+            `${domain}/search/${encodeURIComponent(name)}`,
+            `${domain}/category/${encodeURIComponent(isSeries ? "series" : "movie")}`,
+        ];
+        
+        for (const searchUrl of searchUrls) {
+            console.log(`[4KHDHub] Trying: ${searchUrl}`);
+            const html = yield fetchText(searchUrl);
+            if (!html) continue;
+            
+            const $ = cheerio.load(html);
+            // Buscar cualquier enlace que contenga el título
+            const links = $("a[href]").filter((_, el) => {
+                const text = $(el).text().toLowerCase();
+                return text.includes(name.toLowerCase()) && 
+                       text.includes(String(year));
+            });
+            
+            if (links.length > 0) {
+                const href = links.first().attr("href");
+                return href.startsWith("http") ? href : domain + href;
+            }
+        }
+        return null;
+    });
 }
 var cheerio2 = require("cheerio-without-node-native");
 function resolveRedirectUrl(redirectUrl) {
