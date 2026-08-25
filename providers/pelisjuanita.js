@@ -46,24 +46,25 @@ function fetchText(url, options = {}) {
     }
     return null;
   });
-});
+}
 
 function getTmdbDetails(tmdbId, type) {
   return __async(this, null, function* () {
     const isSeries = type === "series" || type === "tv";
     const endpoint = isSeries ? "tv" : "movie";
-    const url = `https://api.themoviedb.org/3/${endpoint}/${tmdbId}?api_key=439c478a771f35c05022f9feabcca01c`;
+    // FORZAR IDIOMA ESPAÑOL
+    const url = `https://api.themoviedb.org/3/${endpoint}/${tmdbId}?api_key=439c478a771f35c05022f9feabcca01c&language=es`;
     try {
       const response = yield fetch(url);
       const data = yield response.json();
       if (isSeries) {
         return {
-          title: data.name,
+          title: data.name || data.original_name,
           year: data.first_air_date ? parseInt(data.first_air_date.split("-")[0]) : 0
         };
       } else {
         return {
-          title: data.title,
+          title: data.title || data.original_title,
           year: data.release_date ? parseInt(data.release_date.split("-")[0]) : 0
         };
       }
@@ -76,7 +77,6 @@ function getTmdbDetails(tmdbId, type) {
 
 function getStreams(tmdbId, type, season, episode) {
   return __async(this, null, function* () {
-    // 1. Obtener título y año de TMDB
     const tmdbDetails = yield getTmdbDetails(tmdbId, type);
     if (!tmdbDetails) {
       console.log("[PelisJuanita] Could not fetch TMDB details");
@@ -85,7 +85,7 @@ function getStreams(tmdbId, type, season, episode) {
     const { title, year } = tmdbDetails;
     console.log(`[PelisJuanita] Searching for: ${title} (${year})`);
 
-    // 2. Crear el slug del título (nombre en minúsculas, sin acentos, espacios reemplazados por guiones)
+    // Crear slug en español (eliminar acentos, espacios a guiones)
     const slug = title
       .toLowerCase()
       .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Eliminar acentos
@@ -95,21 +95,36 @@ function getStreams(tmdbId, type, season, episode) {
 
     console.log(`[PelisJuanita] Slug: ${slug}`);
 
-    // 3. Construir la URL de la película con el slug
-    const movieUrl = `${BASE_URL}/movies/pelicula/${slug}`;
-    console.log(`[PelisJuanita] Movie URL: ${movieUrl}`);
+    // Intentar diferentes formatos de URL
+    const urlPatterns = [
+      `${BASE_URL}/movies/pelicula/${slug}`,
+      `${BASE_URL}/pelicula/${slug}`,
+      `${BASE_URL}/ver/${slug}`,
+      `${BASE_URL}/movie/${slug}`,
+    ];
 
-    // 4. Obtener la página de la película
-    const movieHtml = yield fetchText(movieUrl);
+    let movieHtml = null;
+    let usedUrl = null;
+
+    for (const url of urlPatterns) {
+      console.log(`[PelisJuanita] Trying: ${url}`);
+      const html = yield fetchText(url);
+      if (html) {
+        movieHtml = html;
+        usedUrl = url;
+        break;
+      }
+    }
+
     if (!movieHtml) {
       console.log("[PelisJuanita] Could not fetch movie page");
       return [];
     }
 
-    // 5. Extraer el iframe del reproductor
+    // Extraer el iframe
     const iframeMatch = movieHtml.match(/<iframe[^>]+src=["']([^"']+)["']/i);
     if (!iframeMatch) {
-      console.log("[PelisJuanita] No iframe found on movie page");
+      console.log("[PelisJuanita] No iframe found");
       return [];
     }
 
@@ -119,7 +134,6 @@ function getStreams(tmdbId, type, season, episode) {
     }
     console.log(`[PelisJuanita] Iframe URL: ${iframeUrl}`);
 
-    // 6. Devolver el stream
     return [{
       name: "PelisJuanita",
       title: title,
