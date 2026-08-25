@@ -52,27 +52,39 @@ function getTmdbDetails(tmdbId, type) {
   return __async(this, null, function* () {
     const isSeries = type === "series" || type === "tv";
     const endpoint = isSeries ? "tv" : "movie";
-    // FORZAR IDIOMA ESPAÑOL
-    const url = `https://api.themoviedb.org/3/${endpoint}/${tmdbId}?api_key=439c478a771f35c05022f9feabcca01c&language=es`;
+    // Obtener título en inglés (por defecto) y en español
+    const urlEn = `https://api.themoviedb.org/3/${endpoint}/${tmdbId}?api_key=439c478a771f35c05022f9feabcca01c`;
+    const urlEs = `https://api.themoviedb.org/3/${endpoint}/${tmdbId}?api_key=439c478a771f35c05022f9feabcca01c&language=es`;
     try {
-      const response = yield fetch(url);
-      const data = yield response.json();
-      if (isSeries) {
-        return {
-          title: data.name || data.original_name,
-          year: data.first_air_date ? parseInt(data.first_air_date.split("-")[0]) : 0
-        };
-      } else {
-        return {
-          title: data.title || data.original_title,
-          year: data.release_date ? parseInt(data.release_date.split("-")[0]) : 0
-        };
-      }
+      const [resEn, resEs] = yield Promise.all([fetch(urlEn), fetch(urlEs)]);
+      const dataEn = yield resEn.json();
+      const dataEs = yield resEs.json();
+      
+      const titleEn = isSeries ? dataEn.name : dataEn.title;
+      const titleEs = isSeries ? dataEs.name : dataEs.title;
+      const year = isSeries ? 
+        (dataEn.first_air_date ? parseInt(dataEn.first_air_date.split("-")[0]) : 0) :
+        (dataEn.release_date ? parseInt(dataEn.release_date.split("-")[0]) : 0);
+      
+      return {
+        titleEn: titleEn,
+        titleEs: titleEs || titleEn,
+        year: year
+      };
     } catch (error) {
       console.log(`[PelisJuanita] TMDB request failed: ${error.message}`);
       return null;
     }
   });
+}
+
+function createSlug(text) {
+  return text
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Eliminar acentos
+    .replace(/[^a-z0-9\s-]/g, "") // Eliminar caracteres especiales
+    .trim()
+    .replace(/\s+/g, "-"); // Reemplazar espacios por guiones
 }
 
 function getStreams(tmdbId, type, season, episode) {
@@ -82,37 +94,56 @@ function getStreams(tmdbId, type, season, episode) {
       console.log("[PelisJuanita] Could not fetch TMDB details");
       return [];
     }
-    const { title, year } = tmdbDetails;
-    console.log(`[PelisJuanita] Searching for: ${title} (${year})`);
+    const { titleEn, titleEs, year } = tmdbDetails;
+    console.log(`[PelisJuanita] English: ${titleEn}, Spanish: ${titleEs} (${year})`);
 
-    // Crear slug en español (eliminar acentos, espacios a guiones)
-    const slug = title
-      .toLowerCase()
-      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Eliminar acentos
-      .replace(/[^a-z0-9\s-]/g, "") // Eliminar caracteres especiales
-      .trim()
-      .replace(/\s+/g, "-"); // Reemplazar espacios por guiones
+    // Generar slugs para inglés y español
+    const slugEn = createSlug(titleEn);
+    const slugEs = createSlug(titleEs);
+    console.log(`[PelisJuanita] Slug EN: ${slugEn}, Slug ES: ${slugEs}`);
 
-    console.log(`[PelisJuanita] Slug: ${slug}`);
-
-    // Intentar diferentes formatos de URL
-    const urlPatterns = [
-      `${BASE_URL}/movies/pelicula/${slug}`,
-      `${BASE_URL}/pelicula/${slug}`,
-      `${BASE_URL}/ver/${slug}`,
-      `${BASE_URL}/movie/${slug}`,
+    // Lista de URLs a probar (inglés primero, luego español)
+    const urlsToTry = [
+      `${BASE_URL}/movies/pelicula/${slugEn}`,
+      `${BASE_URL}/movies/pelicula/${slugEs}`,
+      `${BASE_URL}/pelicula/${slugEn}`,
+      `${BASE_URL}/pelicula/${slugEs}`,
+      `${BASE_URL}/ver/${slugEn}`,
+      `${BASE_URL}/ver/${slugEs}`,
     ];
 
     let movieHtml = null;
     let usedUrl = null;
 
-    for (const url of urlPatterns) {
+    for (const url of urlsToTry) {
       console.log(`[PelisJuanita] Trying: ${url}`);
       const html = yield fetchText(url);
-      if (html) {
+      if (html && !html.includes('404') && !html.includes('Not Found')) {
         movieHtml = html;
         usedUrl = url;
         break;
+      }
+    }
+
+    // Si no funciona, usar la búsqueda avanzada
+    if (!movieHtml) {
+      console.log("[PelisJuanita] Direct URLs failed, trying advanced search...");
+      const searchUrl = `${BASE_URL}/movies/busqueda-avanzada/?q=${encodeURIComponent(titleEn)}`;
+      console.log(`[PelisJuanita] Search URL: ${searchUrl}`);
+      const searchHtml = yield fetchText(searchUrl);
+      if (searchHtml) {
+        // Buscar el primer enlace que sea una película
+        const linkMatch = searchHtml.match(/<a[^>]+href=["'](\/[^"']*pelicula[^"']*)["']/i) ||
+                         searchHtml.match(/<a[^>]+href=["'](\/[^"']*movie[^"']*)["']/i);
+        if (linkMatch) {
+          let resultUrl = linkMatch[1];
+          if (!resultUrl.startsWith("http")) {
+            resultUrl = resultUrl.startsWith("/") ? `${BASE_URL}${resultUrl}` : `${BASE_URL}/${resultUrl}`;
+          }
+          console.log(`[PelisJuanita] Found result: ${resultUrl}`);
+          movieHtml = yield fetchText(resultUrl);
+          usedUrl = resultUrl;
+        }
       }
     }
 
@@ -136,7 +167,7 @@ function getStreams(tmdbId, type, season, episode) {
 
     return [{
       name: "PelisJuanita",
-      title: title,
+      title: titleEs || titleEn,
       url: iframeUrl,
       quality: "1080p",
       behaviorHints: {
