@@ -32,7 +32,8 @@ function fetchText(url, options = {}) {
       try {
         const response = yield fetch(url, {
           headers: {
-            "User-Agent": USER_AGENT
+            "User-Agent": USER_AGENT,
+            "Referer": BASE_URL
           }
         });
         return yield response.text();
@@ -51,41 +52,85 @@ function getStreams(tmdbId, type, season, episode) {
   return __async(this, null, function* () {
     console.log(`[PelisJuanita] Searching for TMDB ID: ${tmdbId}`);
     
-    // Buscar la página de la película en pelisjuanita
-    const searchUrl = `${BASE_URL}/search?q=${tmdbId}`;
+    // Construir URL de búsqueda
+    // pelisjuanita usa el TMDB ID directamente en la URL
+    const searchUrl = `${BASE_URL}/movie/${tmdbId}`;
+    console.log(`[PelisJuanita] Fetching: ${searchUrl}`);
+    
     const html = yield fetchText(searchUrl);
     if (!html) {
       console.log("[PelisJuanita] No results found");
       return [];
     }
     
-    // Extraer el enlace del iframe
-    // Buscar el ID del iframe o el src directo
-    const iframeMatch = html.match(/<iframe[^>]+src=["']([^"']+)["']/i);
-    if (!iframeMatch) {
+    // Buscar el iframe del reproductor
+    // El iframe puede estar en diferentes lugares
+    let iframeUrl = null;
+    
+    // Intentar diferentes patrones de búsqueda
+    const patterns = [
+      // Buscar iframe con src
+      /<iframe[^>]+src=["']([^"']+)["']/i,
+      // Buscar enlace de player.php
+      /player\.php\?id=[^"'\s]+/i,
+      // Buscar enlace de reproducción
+      /href=["']([^"']*player[^"']*)["']/i
+    ];
+    
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match) {
+        iframeUrl = match[1] || match[0];
+        break;
+      }
+    }
+    
+    if (!iframeUrl) {
       console.log("[PelisJuanita] No iframe found");
       return [];
     }
     
-    const iframeUrl = iframeMatch[1];
-    console.log(`[PelisJuanita] Found iframe: ${iframeUrl}`);
-    
     // Si la URL no es absoluta, construirla
-    const fullUrl = iframeUrl.startsWith("http") ? iframeUrl : `${BASE_URL}${iframeUrl}`;
+    if (!iframeUrl.startsWith("http")) {
+      iframeUrl = iframeUrl.startsWith("/") ? `${BASE_URL}${iframeUrl}` : `${BASE_URL}/${iframeUrl}`;
+    }
     
-    // Extraer la calidad del stream (puedes mejorar esto)
+    console.log(`[PelisJuanita] Found stream URL: ${iframeUrl}`);
+    
+    // Verificar si el enlace es válido
+    const testResponse = yield fetch(iframeUrl, {
+      method: "HEAD",
+      headers: { "User-Agent": USER_AGENT }
+    });
+    
+    if (!testResponse.ok) {
+      console.log(`[PelisJuanita] Stream URL not accessible: ${testResponse.status}`);
+      return [];
+    }
+    
+    // Detectar calidad
     let quality = "1080p";
-    if (fullUrl.includes("4k") || fullUrl.includes("4K")) {
+    if (iframeUrl.includes("4k") || iframeUrl.includes("4K") || iframeUrl.includes("2160")) {
       quality = "2160p";
-    } else if (fullUrl.includes("720")) {
+    } else if (iframeUrl.includes("720")) {
       quality = "720p";
+    }
+    
+    // Si es serie, agregar temporada/episodio al título
+    let title = "PelisJuanita Stream";
+    if (type === "tv" || type === "series") {
+      const seasonStr = season ? `S${String(season).padStart(2, "0")}` : "";
+      const episodeStr = episode ? `E${String(episode).padStart(2, "0")}` : "";
+      if (seasonStr || episodeStr) {
+        title = `${seasonStr}${episodeStr}`;
+      }
     }
     
     // Devolver el stream
     return [{
       name: `PelisJuanita - ${quality}`,
-      title: `Stream ${quality}`,
-      url: fullUrl,
+      title: title || "PelisJuanita Stream",
+      url: iframeUrl,
       quality: quality,
       behaviorHints: {
         bingeGroup: "pelisjuanita",
