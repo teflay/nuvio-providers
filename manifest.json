@@ -637,7 +637,21 @@
       "contentLanguage": [
         "en"
       ]
-    }
+    },
+    {
+      "id": "pelisjuanita",
+      "name": "PelisJuanita",
+      "description": "Streams from pelisjuanita.com",
+      "version": "1.0.0",
+      "author": "Teflay",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/pelisjuanita.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": ["mp4", "m3u8"],
+      "logo": "https://via.placeholder.com/48x48/000000/FFFFFF?text=PJ",
+      "contentLanguage": ["es", "en"]
+     }
   ]
 }
 
