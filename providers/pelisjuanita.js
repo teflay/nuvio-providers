@@ -46,9 +46,8 @@ function fetchText(url, options = {}) {
     }
     return null;
   });
-}
+});
 
-// Función para obtener los detalles de TMDB (título y año)
 function getTmdbDetails(tmdbId, type) {
   return __async(this, null, function* () {
     const isSeries = type === "series" || type === "tv";
@@ -86,33 +85,22 @@ function getStreams(tmdbId, type, season, episode) {
     const { title, year } = tmdbDetails;
     console.log(`[PelisJuanita] Searching for: ${title} (${year})`);
 
-    // 2. Buscar en pelisjuanita por título y año
-    const searchUrl = `${BASE_URL}/?s=${encodeURIComponent(title + " " + year)}`;
-    console.log(`[PelisJuanita] Search URL: ${searchUrl}`);
-    const searchHtml = yield fetchText(searchUrl);
-    if (!searchHtml) {
-      console.log("[PelisJuanita] Search failed");
-      return [];
-    }
+    // 2. Crear el slug del título (nombre en minúsculas, sin acentos, espacios reemplazados por guiones)
+    const slug = title
+      .toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Eliminar acentos
+      .replace(/[^a-z0-9\s-]/g, "") // Eliminar caracteres especiales
+      .trim()
+      .replace(/\s+/g, "-"); // Reemplazar espacios por guiones
 
-    // 3. Extraer el enlace del primer resultado
-    // Buscar enlaces que contengan "/pelicula/" o "/movie/"
-    const linkMatch = searchHtml.match(/<a[^>]+href=["'](\/[^"']*pelicula[^"']*)["']/i) ||
-                      searchHtml.match(/<a[^>]+href=["'](\/[^"']*movie[^"']*)["']/i) ||
-                      searchHtml.match(/<a[^>]+href=["'](\/[^"']*ver[^"']*)["']/i);
-    if (!linkMatch) {
-      console.log("[PelisJuanita] No result link found");
-      return [];
-    }
+    console.log(`[PelisJuanita] Slug: ${slug}`);
 
-    let resultUrl = linkMatch[1];
-    if (!resultUrl.startsWith("http")) {
-      resultUrl = resultUrl.startsWith("/") ? `${BASE_URL}${resultUrl}` : `${BASE_URL}/${resultUrl}`;
-    }
-    console.log(`[PelisJuanita] Result URL: ${resultUrl}`);
+    // 3. Construir la URL de la película con el slug
+    const movieUrl = `${BASE_URL}/movies/pelicula/${slug}`;
+    console.log(`[PelisJuanita] Movie URL: ${movieUrl}`);
 
     // 4. Obtener la página de la película
-    const movieHtml = yield fetchText(resultUrl);
+    const movieHtml = yield fetchText(movieUrl);
     if (!movieHtml) {
       console.log("[PelisJuanita] Could not fetch movie page");
       return [];
