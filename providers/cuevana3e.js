@@ -67,28 +67,37 @@ function getStreams(tmdbId, mediaType, season, episode) {
                 const $ = cheerio.load(html);
                 const streamUrls = [];
                 
-                // 1. Extraer TODOS los iframes de la página principal
-                const iframes = $('iframe');
-                console.log(`[Cuevana3E] Encontrados ${iframes.length} iframes en la página principal`);
-                
-                iframes.each((i, el) => {
-                    let src = $(el).attr('src');
-                    if (src) {
-                        // Si el iframe es relativo, construir la URL completa
-                        if (src.startsWith('//')) {
-                            src = 'https:' + src;
-                        } else if (src.startsWith('/')) {
-                            src = getBaseUrl() + src;
+                // Extraer TODOS los enlaces de data-server
+                $('li[data-server]').each((i, el) => {
+                    const serverUrl = $(el).attr('data-server');
+                    const serverName = $(el).find('span').first().text().trim() || `Servidor ${i + 1}`;
+                    
+                    if (serverUrl) {
+                        console.log(`[Cuevana3E] ${serverName}: ${serverUrl}`);
+                        
+                        // Si el enlace es relativo, construir la URL completa
+                        let fullUrl = serverUrl;
+                        if (fullUrl.startsWith('//')) {
+                            fullUrl = 'https:' + fullUrl;
+                        } else if (fullUrl.startsWith('/')) {
+                            fullUrl = getBaseUrl() + fullUrl;
                         }
                         
-                        console.log(`[Cuevana3E] Iframe ${i+1}: ${src}`);
+                        // Detectar la calidad (si es posible)
+                        let quality = "HD";
+                        if (fullUrl.includes('4k') || fullUrl.includes('2160')) {
+                            quality = "2160p";
+                        } else if (fullUrl.includes('1080')) {
+                            quality = "1080p";
+                        } else if (fullUrl.includes('720')) {
+                            quality = "720p";
+                        }
                         
-                        // Añadir el iframe como stream
                         streamUrls.push({
-                            name: `Cuevana3E - Servidor ${i + 1}`,
-                            title: "Stream en Español",
-                            url: src,
-                            quality: "HD",
+                            name: `Cuevana3E - ${serverName}`,
+                            title: `${serverName} (${quality})`,
+                            url: fullUrl,
+                            quality: quality,
                             behaviorHints: {
                                 bingeGroup: "cuevana3e",
                                 proxyHeaders: false,
@@ -98,21 +107,16 @@ function getStreams(tmdbId, mediaType, season, episode) {
                     }
                 });
                 
-                // 2. También buscar enlaces directos de tungtungsahur (por si acaso)
-                const tungtungsahurRegex = /https?:\/\/tungtungsahur\.cuevana3e\.pro\/\?[^"'\s<>]+/gi;
-                const matches = html.match(tungtungsahurRegex);
-                
-                if (matches) {
-                    const uniqueUrls = [...new Set(matches)];
-                    console.log(`[Cuevana3E] Encontrados ${uniqueUrls.length} enlaces de tungtungsahur`);
-                    
-                    uniqueUrls.forEach((url, index) => {
-                        // Evitar duplicados
-                        if (!streamUrls.some(s => s.url === url)) {
+                // Si no hay data-server, buscar iframes como fallback
+                if (streamUrls.length === 0) {
+                    console.log("[Cuevana3E] No hay data-server, buscando iframes...");
+                    $('iframe').each((i, el) => {
+                        const src = $(el).attr('src');
+                        if (src) {
                             streamUrls.push({
-                                name: `Cuevana3E - Token ${index + 1}`,
+                                name: `Cuevana3E - Iframe ${i + 1}`,
                                 title: "Stream en Español",
-                                url: url,
+                                url: src,
                                 quality: "HD",
                                 behaviorHints: {
                                     bingeGroup: "cuevana3e",
