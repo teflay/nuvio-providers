@@ -651,7 +651,21 @@
       "formats": ["mp4", "m3u8"],
       "logo": "https://via.placeholder.com/48x48/000000/FFFFFF?text=PJ",
       "contentLanguage": ["es", "en"]
-     }
+    },
+    {
+      "id": "cuevana3e",
+      "name": "Cuevana3E",
+      "description": "Streams en español desde cuevana3e.pro",
+      "version": "1.0.0",
+      "author": "Teflay",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/cuevana3e.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": ["mp4", "m3u8"],
+      "logo": "https://i.postimg.cc/3Rc34LJj/movieshunt.png",
+      "contentLanguage": ["es"]
+    }
   ]
 }
 
