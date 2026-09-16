@@ -37,6 +37,20 @@ function createSlug(text) {
         .replace(/\s+/g, "-");
 }
 
+function decodeBase64(str) {
+    try {
+        if (typeof atob === 'function') {
+            return atob(str);
+        }
+        if (typeof Buffer !== 'undefined') {
+            return Buffer.from(str, 'base64').toString('utf-8');
+        }
+        return null;
+    } catch (e) {
+        return null;
+    }
+}
+
 function getStreams(tmdbId, mediaType, season, episode) {
     console.log(`[Cuevana3E] Buscando ${mediaType} ${tmdbId}`);
 
@@ -64,59 +78,32 @@ function getStreams(tmdbId, mediaType, season, episode) {
             .then(html => {
                 if (!html) return [];
                 
-                const $ = cheerio.load(html);
                 const streamUrls = [];
                 
                 // Extraer TODOS los enlaces de data-server
-                $('li[data-server]').each((i, el) => {
-                    const serverUrl = $(el).attr('data-server');
-                    const serverName = $(el).find('span').first().text().trim() || `Servidor ${i + 1}`;
-                    
-                    if (serverUrl) {
-                        console.log(`[Cuevana3E] ${serverName}: ${serverUrl}`);
-                        
-                        // Si el enlace es relativo, construir la URL completa
-                        let fullUrl = serverUrl;
-                        if (fullUrl.startsWith('//')) {
-                            fullUrl = 'https:' + fullUrl;
-                        } else if (fullUrl.startsWith('/')) {
-                            fullUrl = getBaseUrl() + fullUrl;
-                        }
-                        
-                        // Detectar la calidad (si es posible)
-                        let quality = "HD";
-                        if (fullUrl.includes('4k') || fullUrl.includes('2160')) {
-                            quality = "2160p";
-                        } else if (fullUrl.includes('1080')) {
-                            quality = "1080p";
-                        } else if (fullUrl.includes('720')) {
-                            quality = "720p";
-                        }
-                        
-                        streamUrls.push({
-                            name: `Cuevana3E - ${serverName}`,
-                            title: `${serverName} (${quality})`,
-                            url: fullUrl,
-                            quality: quality,
-                            behaviorHints: {
-                                bingeGroup: "cuevana3e",
-                                proxyHeaders: false,
-                                notWebVideo: false,
-                            }
-                        });
-                    }
-                });
+                const dataServerRegex = /data-server=["']([^"']+)["']/gi;
+                let match;
                 
-                // Si no hay data-server, buscar iframes como fallback
-                if (streamUrls.length === 0) {
-                    console.log("[Cuevana3E] No hay data-server, buscando iframes...");
-                    $('iframe').each((i, el) => {
-                        const src = $(el).attr('src');
-                        if (src) {
+                while ((match = dataServerRegex.exec(html)) !== null) {
+                    const serverUrl = match[1];
+                    
+                    // Solo procesar los que tienen ?v= (Base64)
+                    if (serverUrl.includes('?v=')) {
+                        const base64Part = serverUrl.split('?v=')[1];
+                        const decoded = decodeBase64(base64Part);
+                        
+                        if (decoded && decoded.startsWith('http')) {
+                            // Determinar el nombre del servidor por el dominio
+                            let serverName = "Cuevana3E";
+                            try {
+                                const hostname = new URL(decoded).hostname;
+                                serverName = `Cuevana3E - ${hostname}`;
+                            } catch (e) {}
+                            
                             streamUrls.push({
-                                name: `Cuevana3E - Iframe ${i + 1}`,
-                                title: "Stream en Español",
-                                url: src,
+                                name: serverName,
+                                title: `Stream en Español (${serverName})`,
+                                url: decoded,
                                 quality: "HD",
                                 behaviorHints: {
                                     bingeGroup: "cuevana3e",
@@ -124,8 +111,10 @@ function getStreams(tmdbId, mediaType, season, episode) {
                                     notWebVideo: false,
                                 }
                             });
+                            
+                            console.log(`[Cuevana3E] ${serverName}: ${decoded}`);
                         }
-                    });
+                    }
                 }
                 
                 console.log(`[Cuevana3E] Total de streams encontrados: ${streamUrls.length}`);
