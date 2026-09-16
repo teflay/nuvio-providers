@@ -31,10 +31,10 @@ async function getBaseUrl() {
 function createSlug(text) {
     return text
         .toLowerCase()
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Eliminar acentos
-        .replace(/[^a-z0-9\s-]/g, "") // Eliminar caracteres especiales
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9\s-]/g, "")
         .trim()
-        .replace(/\s+/g, "-"); // Reemplazar espacios por guiones
+        .replace(/\s+/g, "-");
 }
 
 function decodeBase64(str) {
@@ -59,14 +59,13 @@ function getStreams(tmdbId, mediaType, season, episode) {
         return fetch(`https://api.themoviedb.org/3/${mediaType === 'tv' ? 'tv' : 'movie'}/${tmdbId}?api_key=${TMDB_API_KEY}&language=es`)
             .then(response => response.json())
             .then(data => {
-                // Usar el título en español
                 const title = mediaType === 'tv' ? data.name : data.title;
                 if (!title) throw new Error("No se encontró título");
                 
-                console.log(`[Cuevana3E] Título en español: ${title}`);
+                console.log(`[Cuevana3E] Título: ${title}`);
                 
                 const slug = createSlug(title);
-                console.log(`[Cuevana3E] Slug generado: ${slug}`);
+                console.log(`[Cuevana3E] Slug: ${slug}`);
                 
                 let pageUrl;
 
@@ -86,14 +85,12 @@ function getStreams(tmdbId, mediaType, season, episode) {
                 
                 const streamUrls = [];
                 
-                // Extraer TODOS los enlaces de data-server
                 const dataServerRegex = /data-server=["']([^"']+)["']/gi;
                 let match;
                 
                 while ((match = dataServerRegex.exec(html)) !== null) {
                     const serverUrl = match[1];
                     
-                    // Solo procesar los que tienen ?v= (Base64)
                     if (serverUrl.includes('?v=')) {
                         const base64Part = serverUrl.split('?v=')[1];
                         const decoded = decodeBase64(base64Part);
@@ -120,8 +117,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
                             console.log(`[Cuevana3E] ${serverName}: ${decoded}`);
                         }
                     } else if (serverUrl.includes('?token=')) {
-                        console.log(`[Cuevana3E] Token encontrado (no decodificable): ${serverUrl}`);
-                        // Incluir tokens como streams (Nuvio intentará cargarlos)
+                        console.log(`[Cuevana3E] Token encontrado: ${serverUrl}`);
                         streamUrls.push({
                             name: `Cuevana3E - Token`,
                             title: `Stream en Español (Token)`,
