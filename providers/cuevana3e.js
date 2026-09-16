@@ -114,6 +114,23 @@ function getStreams(tmdbId, mediaType, season, episode) {
                             
                             console.log(`[Cuevana3E] ${serverName}: ${decoded}`);
                         }
+                    } else if (serverUrl.includes('?token=')) {
+                        // Los tokens no son decodificables, pero podemos intentar usarlos
+                        // como iframe (Nuvio los cargará en un WebView)
+                        console.log(`[Cuevana3E] Token encontrado (no decodificable): ${serverUrl}`);
+                        
+                        // Opcional: añadirlos como streams (Nuvio intentará cargarlos)
+                        streamUrls.push({
+                            name: `Cuevana3E - Token`,
+                            title: `Stream en Español (Token)`,
+                            url: serverUrl,
+                            quality: "HD",
+                            behaviorHints: {
+                                bingeGroup: "cuevana3e",
+                                proxyHeaders: false,
+                                notWebVideo: false,
+                            }
+                        });
                     }
                 }
                 
