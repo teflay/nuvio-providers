@@ -1,28 +1,21 @@
 // providers/cuevana3e.js
 const cheerio = require("cheerio-without-node-native");
 
-// URL del archivo de dominios en tu repositorio
-const DOMAINS_URL = "https://raw.githubusercontent.com/TU_USUARIO/nuvio-providers/main/domains.json";
-const TMDB_API_KEY = "TU_API_KEY";
+const DOMAINS_URL = "https://raw.githubusercontent.com/teflay/nuvio-providers/main/domains.json";
+const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 
-// Caché del dominio (para no descargar en cada petición)
 let cachedDomain = null;
 let cacheTimestamp = 0;
-const CACHE_DURATION = 60 * 60 * 1000; // 1 hora
+const CACHE_DURATION = 60 * 60 * 1000;
 
-// Obtener el dominio actualizado
 async function getBaseUrl() {
     const now = Date.now();
-    
-    // Usar caché si es reciente
     if (cachedDomain && (now - cacheTimestamp) < CACHE_DURATION) {
         return cachedDomain;
     }
-    
     try {
         const response = await fetch(DOMAINS_URL);
         const domains = await response.json();
-        
         if (domains.cuevana3e && domains.cuevana3e.baseUrl) {
             cachedDomain = domains.cuevana3e.baseUrl;
             cacheTimestamp = now;
@@ -32,12 +25,9 @@ async function getBaseUrl() {
     } catch (error) {
         console.log(`[Cuevana3E] Error obteniendo dominio: ${error.message}`);
     }
-    
-    // Fallback al dominio por defecto
     return "https://cuevana3e.pro";
 }
 
-// Función para convertir un título en slug
 function createSlug(text) {
     return text
         .toLowerCase()
@@ -51,7 +41,6 @@ function getStreams(tmdbId, mediaType, season, episode) {
     console.log(`[Cuevana3E] Buscando ${mediaType} ${tmdbId}`);
 
     return getBaseUrl().then(baseUrl => {
-        // 1. Obtener el título de TMDB
         return fetch(`https://api.themoviedb.org/3/${mediaType === 'tv' ? 'tv' : 'movie'}/${tmdbId}?api_key=${TMDB_API_KEY}&language=es`)
             .then(response => response.json())
             .then(data => {
@@ -61,7 +50,6 @@ function getStreams(tmdbId, mediaType, season, episode) {
                 const slug = createSlug(title);
                 let pageUrl;
 
-                // 2. Construir la URL de la página
                 if (mediaType === 'tv' && season && episode) {
                     pageUrl = `${baseUrl}/serie/${slug}/episodio-${season}x${episode}`;
                 } else if (mediaType === 'movie') {
@@ -77,25 +65,67 @@ function getStreams(tmdbId, mediaType, season, episode) {
                 if (!html) return [];
                 
                 const $ = cheerio.load(html);
-                const iframe = $('iframe').first();
-                const src = iframe.attr('src');
-
-                if (!src) {
-                    console.log("[Cuevana3E] No se encontró iframe");
-                    return [];
-                }
-
-                return [{
-                    name: "Cuevana3E",
-                    title: "Stream en Español",
-                    url: src,
-                    quality: "HD",
-                    behaviorHints: {
-                        bingeGroup: "cuevana3e",
-                        proxyHeaders: false,
-                        notWebVideo: false,
+                const streamUrls = [];
+                
+                // 1. Extraer TODOS los iframes de la página principal
+                const iframes = $('iframe');
+                console.log(`[Cuevana3E] Encontrados ${iframes.length} iframes en la página principal`);
+                
+                iframes.each((i, el) => {
+                    let src = $(el).attr('src');
+                    if (src) {
+                        // Si el iframe es relativo, construir la URL completa
+                        if (src.startsWith('//')) {
+                            src = 'https:' + src;
+                        } else if (src.startsWith('/')) {
+                            src = getBaseUrl() + src;
+                        }
+                        
+                        console.log(`[Cuevana3E] Iframe ${i+1}: ${src}`);
+                        
+                        // Añadir el iframe como stream
+                        streamUrls.push({
+                            name: `Cuevana3E - Servidor ${i + 1}`,
+                            title: "Stream en Español",
+                            url: src,
+                            quality: "HD",
+                            behaviorHints: {
+                                bingeGroup: "cuevana3e",
+                                proxyHeaders: false,
+                                notWebVideo: false,
+                            }
+                        });
                     }
-                }];
+                });
+                
+                // 2. También buscar enlaces directos de tungtungsahur (por si acaso)
+                const tungtungsahurRegex = /https?:\/\/tungtungsahur\.cuevana3e\.pro\/\?[^"'\s<>]+/gi;
+                const matches = html.match(tungtungsahurRegex);
+                
+                if (matches) {
+                    const uniqueUrls = [...new Set(matches)];
+                    console.log(`[Cuevana3E] Encontrados ${uniqueUrls.length} enlaces de tungtungsahur`);
+                    
+                    uniqueUrls.forEach((url, index) => {
+                        // Evitar duplicados
+                        if (!streamUrls.some(s => s.url === url)) {
+                            streamUrls.push({
+                                name: `Cuevana3E - Token ${index + 1}`,
+                                title: "Stream en Español",
+                                url: url,
+                                quality: "HD",
+                                behaviorHints: {
+                                    bingeGroup: "cuevana3e",
+                                    proxyHeaders: false,
+                                    notWebVideo: false,
+                                }
+                            });
+                        }
+                    });
+                }
+                
+                console.log(`[Cuevana3E] Total de streams encontrados: ${streamUrls.length}`);
+                return streamUrls;
             });
     })
     .catch(error => {
